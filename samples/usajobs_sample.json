@@ -1,0 +1,51 @@
+{
+  "SearchResult": {
+    "SearchResultCount": 2,
+    "SearchResultItems": [
+      {
+        "MatchedObjectId": "789456123",
+        "MatchedObjectDescriptor": {
+          "PositionID": "DE-2026-0456",
+          "PositionTitle": "Data Engineer, GS-13",
+          "OrganizationName": "Department of Commerce",
+          "PositionLocationDisplay": "Washington, DC",
+          "UserArea": {
+            "Details": {
+              "JobSummary": "The incumbent will design and maintain data pipelines supporting economic indicators, using cloud-based big data tools.",
+              "LowGrade": "13",
+              "HighGrade": "13"
+            }
+          },
+          "PositionRemuneration": [
+            { "MinimumRange": "103000.00", "MaximumRange": "134000.00", "RateIntervalCode": "PA" }
+          ],
+          "PublicationStartDate": "2026-08-02",
+          "ApplicationCloseDate": "2026-09-01",
+          "PositionURI": "https://www.usajobs.gov/job/789456123"
+        }
+      },
+      {
+        "MatchedObjectId": "789456200",
+        "MatchedObjectDescriptor": {
+          "PositionID": "DE-2026-0501",
+          "PositionTitle": "IT Specialist (Data Management), GS-12",
+          "OrganizationName": "Department of Veterans Affairs",
+          "PositionLocationDisplay": "Remote",
+          "UserArea": {
+            "Details": {
+              "JobSummary": "Responsible for ETL processes, data quality, and reporting infrastructure supporting veteran services.",
+              "LowGrade": "12",
+              "HighGrade": "12"
+            }
+          },
+          "PositionRemuneration": [
+            { "MinimumRange": "89000.00", "MaximumRange": "115000.00", "RateIntervalCode": "PA" }
+          ],
+          "PublicationStartDate": "2026-08-04",
+          "ApplicationCloseDate": "2026-09-04",
+          "PositionURI": "https://www.usajobs.gov/job/789456200"
+        }
+      }
+    ]
+  }
+}

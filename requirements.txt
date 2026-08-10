@@ -1,0 +1,5 @@
+databricks-vector-search
+psycopg2-binary
+openai
+streamlit
+pandas

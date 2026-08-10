@@ -1,0 +1,29 @@
+[
+  { "legal": "RemoteOK is not an employment agency, it aggregates job listings." },
+  {
+    "id": "1091823",
+    "slug": "backend-engineer-python-remoteco",
+    "company": "Remote.co",
+    "position": "Backend Engineer (Python)",
+    "tags": ["python", "backend", "postgres", "remote"],
+    "description": "We need a backend engineer comfortable with Python, FastAPI, and Postgres. No Kubernetes experience required, we use managed hosting.",
+    "location": "Worldwide",
+    "salary_min": 90000,
+    "salary_max": 120000,
+    "date": "2026-08-05T00:00:00+00:00",
+    "url": "https://remoteok.com/remote-jobs/1091823"
+  },
+  {
+    "id": "1091850",
+    "slug": "ml-platform-engineer-datastack",
+    "company": "DataStack Inc",
+    "position": "ML Platform Engineer",
+    "tags": ["machine-learning", "mlops", "spark", "remote"],
+    "description": "Build and maintain our ML platform on top of Databricks, including feature stores and model serving pipelines.",
+    "location": "Worldwide",
+    "salary_min": 110000,
+    "salary_max": 140000,
+    "date": "2026-08-06T00:00:00+00:00",
+    "url": "https://remoteok.com/remote-jobs/1091850"
+  }
+]

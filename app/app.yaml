@@ -1,0 +1,9 @@
+command: ["streamlit", "run", "app.py"]
+
+env:
+  - name: "LAKEBASE_DSN"
+    valueFrom: "lakebase_dsn_secret"
+  - name: "DATABRICKS_HOST"
+    valueFrom: "databricks_host_secret"
+  - name: "DATABRICKS_TOKEN"
+    valueFrom: "databricks_token_secret"

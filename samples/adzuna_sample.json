@@ -1,0 +1,30 @@
+{
+  "results": [
+    {
+      "id": "4756382910",
+      "title": "Senior Data Engineer",
+      "company": { "display_name": "Nimbus Analytics" },
+      "location": { "display_name": "Remote - US", "area": ["US", "Remote"] },
+      "description": "We are looking for a Senior Data Engineer to build scalable ELT pipelines on Databricks and Spark. Experience with Delta Lake, Airflow, and dbt preferred. 4+ years experience.",
+      "salary_min": 130000,
+      "salary_max": 165000,
+      "category": { "label": "IT Jobs" },
+      "created": "2026-08-01T09:12:00Z",
+      "redirect_url": "https://www.adzuna.com/details/4756382910",
+      "contract_type": "full_time"
+    },
+    {
+      "id": "4756382999",
+      "title": "Data Platform Engineer",
+      "company": { "display_name": "Riverstone Logistics" },
+      "location": { "display_name": "Austin, TX", "area": ["US", "Texas", "Austin"] },
+      "description": "Join our data platform team to design Lakehouse architecture using Databricks Unity Catalog, PySpark, and streaming pipelines with Kafka.",
+      "salary_min": 115000,
+      "salary_max": 145000,
+      "category": { "label": "IT Jobs" },
+      "created": "2026-08-03T14:20:00Z",
+      "redirect_url": "https://www.adzuna.com/details/4756382999",
+      "contract_type": "full_time"
+    }
+  ]
+}
