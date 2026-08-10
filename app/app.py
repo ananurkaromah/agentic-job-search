@@ -5,24 +5,16 @@
 # as the entrypoint, plus an app.yaml declaring the Streamlit command.
 # ==============================================================
 
-import os
 from datetime import datetime
 
 import pandas as pd
-import psycopg2
-import psycopg2.extras
 import streamlit as st
 
 import agent_tools as tools
 from agent import run_agent_turn
+from lakebase import get_connection as get_conn
 
 st.set_page_config(page_title="AI Job Hunting Copilot", layout="wide")
-
-LAKEBASE_DSN = os.environ["LAKEBASE_DSN"]
-
-
-def get_conn():
-    return psycopg2.connect(LAKEBASE_DSN, cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 # --- session state ---------------------------------------------------

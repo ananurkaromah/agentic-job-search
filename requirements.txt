@@ -1,4 +1,5 @@
 databricks-vector-search
+databricks-sdk
 psycopg2-binary
 openai
 streamlit

@@ -118,9 +118,13 @@ display(cleaned_df.limit(10))
 # secrets stored in a Databricks secret scope (recommended over
 # hardcoding credentials).
 
-LAKEBASE_JDBC_URL = dbutils.secrets.get("job_copilot", "lakebase_jdbc_url")
-LAKEBASE_USER = dbutils.secrets.get("job_copilot", "lakebase_user")
-LAKEBASE_PASSWORD = dbutils.secrets.get("job_copilot", "lakebase_password")
+# Same secret written once by app/setup_secrets.py (scope="job_copilot",
+# key="lakebase-url"), so the notebook and the deployed app always point
+# at the same Lakebase instance. dbutils.secrets.get() returns the
+# decoded plaintext value directly — no extra base64 step needed here
+# (that step only applies to app/lakebase.py, which calls the raw REST API).
+LAKEBASE_URL = dbutils.secrets.get("job_copilot", "lakebase-url")
+LAKEBASE_JDBC_URL = "jdbc:" + LAKEBASE_URL  # psycopg2-style URL -> JDBC URL
 
 STAGING_TABLE = "job_copilot.job_postings_staging"
 
@@ -129,8 +133,6 @@ STAGING_TABLE = "job_copilot.job_postings_staging"
     .format("jdbc")
     .option("url", LAKEBASE_JDBC_URL)
     .option("dbtable", STAGING_TABLE)
-    .option("user", LAKEBASE_USER)
-    .option("password", LAKEBASE_PASSWORD)
     .option("driver", "org.postgresql.Driver")
     .mode("overwrite")
     .save()
@@ -142,8 +144,7 @@ STAGING_TABLE = "job_copilot.job_postings_staging"
 
 import psycopg2
 
-conn = psycopg2.connect(dsn=LAKEBASE_JDBC_URL.replace("jdbc:", ""),
-                         user=LAKEBASE_USER, password=LAKEBASE_PASSWORD)
+conn = psycopg2.connect(LAKEBASE_URL)
 conn.autocommit = True
 
 merge_sql = """

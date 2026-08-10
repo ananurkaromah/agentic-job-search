@@ -1,8 +1,10 @@
 command: ["streamlit", "run", "app.py"]
 
 env:
-  - name: "LAKEBASE_DSN"
-    valueFrom: "lakebase_dsn_secret"
+  - name: "LAKEBASE_SECRET_SCOPE"
+    value: "job_copilot"
+  - name: "LAKEBASE_SECRET_KEY"
+    value: "lakebase-url"
   - name: "DATABRICKS_HOST"
     valueFrom: "databricks_host_secret"
   - name: "DATABRICKS_TOKEN"

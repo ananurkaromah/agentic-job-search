@@ -5,22 +5,16 @@
 # Python; agent.py wraps these as callable "tools" for the LLM.
 # ==============================================================
 
-import os
 from datetime import date, datetime
 
-import psycopg2
-import psycopg2.extras
 from databricks.vector_search.client import VectorSearchClient
 
-LAKEBASE_DSN = os.environ["LAKEBASE_DSN"]          # postgres connection string
+from lakebase import get_connection as _get_conn
+
 VS_ENDPOINT = "job_copilot_vs_endpoint"
 JOB_INDEX_NAME = "main.default.job_postings_index"
 
 vsc = VectorSearchClient()
-
-
-def _get_conn():
-    return psycopg2.connect(LAKEBASE_DSN, cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 # ----------------------- READ TOOLS -----------------------------------
