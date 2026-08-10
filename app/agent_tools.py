@@ -12,7 +12,7 @@ from databricks.vector_search.client import VectorSearchClient
 from lakebase import get_connection as _get_conn
 
 VS_ENDPOINT = "job_copilot_vs_endpoint"
-JOB_INDEX_NAME = "main.default.job_postings_index"
+JOB_INDEX_NAME = "workspace.default.job_postings_index"
 
 vsc = VectorSearchClient()
 

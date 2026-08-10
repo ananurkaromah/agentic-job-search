@@ -16,7 +16,7 @@ from databricks.vector_search.client import VectorSearchClient
 vsc = VectorSearchClient()
 
 ENDPOINT_NAME = "job_copilot_vs_endpoint"   # single AI Search Endpoint shared by both indexes
-CATALOG = "main"
+CATALOG = "workspace"
 SCHEMA = "default"
 
 # COMMAND ----------
@@ -30,20 +30,20 @@ else:
     print(f"Endpoint {ENDPOINT_NAME} already exists")
 
 # COMMAND ----------
-# --- 2. Source tables must first be synced into Delta tables with -------
-# Change Data Feed enabled (Lakebase -> Delta sync, or a Lakeflow
-# Connect pipeline). Assume these Delta mirror tables already exist:
-#   main.default.job_postings_delta   (job_id, clean_description, ...)
-#   main.default.profiles_delta       (profile_id, resume_text, ...)
+# --- 2. Source tables must be Delta with Change Data Feed enabled --------
+# Run vector_search/sync_lakebase_to_delta.py first (once, or any time you
+# want the mirrors refreshed) — it creates both {CATALOG}.{SCHEMA}.job_postings_delta
+# and {CATALOG}.{SCHEMA}.profiles_delta directly from Lakebase and enables CDF.
+# This notebook only verifies they exist before proceeding.
 
-spark.sql(f"""
-    ALTER TABLE {CATALOG}.{SCHEMA}.job_postings_delta
-    SET TBLPROPERTIES (delta.enableChangeDataFeed = true)
-""")
-spark.sql(f"""
-    ALTER TABLE {CATALOG}.{SCHEMA}.profiles_delta
-    SET TBLPROPERTIES (delta.enableChangeDataFeed = true)
-""")
+for table in ["job_postings_delta", "profiles_delta"]:
+    full_name = f"{CATALOG}.{SCHEMA}.{table}"
+    if not spark.catalog.tableExists(full_name):
+        raise RuntimeError(
+            f"{full_name} does not exist yet. Run "
+            "vector_search/sync_lakebase_to_delta.py first."
+        )
+print("Delta mirrors verified.")
 
 # COMMAND ----------
 # --- 3. Create the job_postings index (Databricks-managed embeddings) ---
