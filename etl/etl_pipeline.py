@@ -3,7 +3,6 @@
 # [tool.databricks.environment]
 # environment_version = "5"
 # ///
-
 # ==============================================================
 # etl_pipeline.py
 # Reads raw JSON payloads (Adzuna, RemoteOK, USAJobs) from a Databricks
@@ -120,6 +119,51 @@ cleaned_df = (
 )
 
 display(cleaned_df.limit(10))
+
+# COMMAND ----------
+
+# DBTITLE 1,Write to Delta table for Vector Search
+# --- 3b. Write to Delta table for Vector Search --------------------------
+# This enables the Vector Search indexes to sync from a Delta source
+# with Change Data Feed enabled.
+
+DELTA_TABLE = "workspace.default.job_postings_delta"
+
+# Write with MERGE to deduplicate on source_api + external_id
+# (matching the Lakebase upsert logic)
+from delta.tables import DeltaTable
+
+# Check if table exists
+if not spark.catalog.tableExists(DELTA_TABLE):
+    # Create table on first run using append mode (safe for new table)
+    (
+        cleaned_df.write
+        .format("delta")
+        .mode("append")
+        .option("mergeSchema", "true")
+        .saveAsTable(DELTA_TABLE)
+    )
+    # Enable Change Data Feed immediately after creation
+    spark.sql(f"ALTER TABLE {DELTA_TABLE} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)")
+    print(f"✓ Created {DELTA_TABLE} with Change Data Feed enabled")
+    row_count = spark.table(DELTA_TABLE).count()
+    print(f"✓ Initial load: {row_count} rows")
+else:
+    # Table exists - perform MERGE (upsert)
+    delta_table = DeltaTable.forName(spark, DELTA_TABLE)
+    
+    (
+        delta_table.alias("target")
+        .merge(
+            cleaned_df.alias("source"),
+            "target.source_api = source.source_api AND target.external_id = source.external_id"
+        )
+        .whenMatchedUpdateAll()
+        .whenNotMatchedInsertAll()
+        .execute()
+    )
+    row_count = spark.table(DELTA_TABLE).count()
+    print(f"✓ Merged data into {DELTA_TABLE} (total: {row_count} rows)")
 
 # COMMAND ----------
 

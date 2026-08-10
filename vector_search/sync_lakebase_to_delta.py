@@ -3,7 +3,6 @@
 # [tool.databricks.environment]
 # environment_version = "5"
 # ///
-
 # ==============================================================
 # sync_lakebase_to_delta.py
 # Reads job_postings and profiles from Lakebase and writes them into
@@ -28,6 +27,7 @@ LAKEBASE_URL = dbutils.secrets.get("job_copilot", "lakebase-url")
 parsed = urlparse(LAKEBASE_URL)
 
 # COMMAND ----------
+
 # --- 1. Read from Lakebase via the native postgresql connector -----------
 # Same connector etl_pipeline.py writes with; here we read instead.
 
@@ -51,12 +51,14 @@ print(f"job_postings: {job_postings_df.count()} rows")
 print(f"profiles: {profiles_df.count()} rows")
 
 # COMMAND ----------
+
 # --- 2. Write Delta mirror tables (overwrite each run) --------------------
 
 job_postings_df.write.mode("overwrite").saveAsTable(f"{CATALOG}.{SCHEMA}.job_postings_delta")
 profiles_df.write.mode("overwrite").saveAsTable(f"{CATALOG}.{SCHEMA}.profiles_delta")
 
 # COMMAND ----------
+
 # --- 3. Enable Change Data Feed on both (idempotent) -----------------------
 
 spark.sql(f"""
