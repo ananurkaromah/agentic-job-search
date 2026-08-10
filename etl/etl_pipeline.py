@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # ==============================================================
 # etl_pipeline.py
 # Reads raw JSON payloads (Adzuna, RemoteOK, USAJobs) from a Databricks
@@ -10,6 +14,7 @@
 # ==============================================================
 
 # COMMAND ----------
+
 import re
 import uuid
 from datetime import datetime, timezone
@@ -17,9 +22,10 @@ from datetime import datetime, timezone
 from pyspark.sql import functions as F
 from pyspark.sql.types import StringType
 
-VOLUME_PATH = "/Volumes/main/default/job_data"
+VOLUME_PATH = "/Volumes/workspace/default/job_data"
 
 # COMMAND ----------
+
 # --- 1. Load raw JSON per source --------------------------------------
 
 adzuna_raw = spark.read.option("multiLine", True).json(f"{VOLUME_PATH}/adzuna/*.json")
@@ -27,6 +33,7 @@ remoteok_raw = spark.read.option("multiLine", True).json(f"{VOLUME_PATH}/remoteo
 usajobs_raw = spark.read.option("multiLine", True).json(f"{VOLUME_PATH}/usajobs/*.json")
 
 # COMMAND ----------
+
 # --- 2. Normalize each source into a common schema ---------------------
 # Common schema: source_api, external_id, title, company, location,
 #                salary_range, raw_description, posted_at
@@ -87,6 +94,7 @@ usajobs_df = (
 unified_df = adzuna_df.unionByName(remoteok_df).unionByName(usajobs_df)
 
 # COMMAND ----------
+
 # --- 3. Clean unstructured description text ------------------------------
 
 @F.udf(StringType())
@@ -113,6 +121,7 @@ cleaned_df = (
 display(cleaned_df.limit(10))
 
 # COMMAND ----------
+
 # --- 4. Upsert into Lakebase `job_postings` -------------------------------
 # Lakebase is Postgres-compatible: write via the JDBC driver using
 # secrets stored in a Databricks secret scope (recommended over
@@ -123,22 +132,28 @@ display(cleaned_df.limit(10))
 # at the same Lakebase instance. dbutils.secrets.get() returns the
 # decoded plaintext value directly — no extra base64 step needed here
 # (that step only applies to app/lakebase.py, which calls the raw REST API).
+from urllib.parse import urlparse
+
 LAKEBASE_URL = dbutils.secrets.get("job_copilot", "lakebase-url")
-LAKEBASE_JDBC_URL = "jdbc:" + LAKEBASE_URL  # psycopg2-style URL -> JDBC URL
+parsed = urlparse(LAKEBASE_URL)
 
 STAGING_TABLE = "job_copilot.job_postings_staging"
 
 (
     cleaned_df.write
-    .format("jdbc")
-    .option("url", LAKEBASE_JDBC_URL)
+    .format("postgresql")
+    .option("host", parsed.hostname)
+    .option("port", parsed.port or 5432)
+    .option("database", parsed.path.lstrip("/"))
+    .option("user", parsed.username)
+    .option("password", parsed.password)
     .option("dbtable", STAGING_TABLE)
-    .option("driver", "org.postgresql.Driver")
     .mode("overwrite")
     .save()
 )
 
 # COMMAND ----------
+
 # --- 5. Merge staging -> job_postings (dedupe on source_api + external_id) --
 # Executed via a JDBC connection so we can run a single MERGE statement.
 
@@ -151,8 +166,8 @@ merge_sql = """
 INSERT INTO job_copilot.job_postings
     (job_id, source_api, external_id, title, company, location, salary_range,
      raw_description, clean_description, posted_at, vector_id, ingested_at)
-SELECT job_id, source_api, external_id, title, company, location, salary_range,
-       raw_description, clean_description, posted_at, vector_id, ingested_at
+SELECT job_id::uuid, source_api, external_id, title, company, location, salary_range,
+       raw_description, clean_description, posted_at, vector_id::uuid, ingested_at
 FROM job_copilot.job_postings_staging
 ON CONFLICT (source_api, external_id) DO UPDATE SET
     title = EXCLUDED.title,

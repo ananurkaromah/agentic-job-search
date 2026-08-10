@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # ==============================================================
 # fetch_live_jobs.py
 # Replaces the manual "upload samples/ to the Volume" step with a live
@@ -15,16 +19,18 @@
 # ==============================================================
 
 # COMMAND ----------
+
 import json
 from datetime import datetime, timezone
 
 import requests
 
-VOLUME_PATH = "/Volumes/main/default/job_data"
+VOLUME_PATH = "/Volumes/workspace/default/job_data"
 SEARCH_KEYWORDS = "data engineer"          # adjust to your target role
 RUN_TS = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 # COMMAND ----------
+
 # --- Adzuna ------------------------------------------------------------
 
 ADZUNA_APP_ID = dbutils.secrets.get("job_copilot", "adzuna-app-id")
@@ -48,6 +54,7 @@ dbutils.fs.put(adzuna_path, json.dumps(adzuna_resp.json()), overwrite=True)
 print(f"Wrote {adzuna_path}")
 
 # COMMAND ----------
+
 # --- USAJobs -------------------------------------------------------------
 
 USAJOBS_AUTH_KEY = dbutils.secrets.get("job_copilot", "usajobs-auth-key")
@@ -70,6 +77,7 @@ dbutils.fs.put(usajobs_path, json.dumps(usajobs_resp.json()), overwrite=True)
 print(f"Wrote {usajobs_path}")
 
 # COMMAND ----------
+
 # --- RemoteOK (public, no auth) -------------------------------------------
 
 remoteok_resp = requests.get(
@@ -85,6 +93,7 @@ dbutils.fs.put(remoteok_path, json.dumps(remoteok_resp.json()), overwrite=True)
 print(f"Wrote {remoteok_path}")
 
 # COMMAND ----------
+
 # Next: run etl_pipeline.py — it reads every *.json file under each
 # source's Volume folder, so old and new runs both get picked up
 # (job_postings dedupes on source_api + external_id via the ETL's MERGE).
