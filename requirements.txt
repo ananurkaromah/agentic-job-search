@@ -1,4 +1,4 @@
-databricks-vector-search
+databricks-vectorsearch
 databricks-sdk
 psycopg2-binary
 openai
