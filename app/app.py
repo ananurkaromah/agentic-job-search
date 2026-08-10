@@ -12,7 +12,7 @@ import streamlit as st
 
 import agent_tools as tools
 from agent import run_agent_turn
-from lakebase import get_connection as get_conn
+from app.lakebase import get_connection as get_conn
 
 st.set_page_config(page_title="AI Job Hunting Copilot", layout="wide")
 
