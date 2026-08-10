@@ -3,6 +3,7 @@
 # [tool.databricks.environment]
 # environment_version = "5"
 # ///
+
 # ==============================================================
 # etl_pipeline.py
 # Reads raw JSON payloads (Adzuna, RemoteOK, USAJobs) from a Databricks
@@ -123,9 +124,9 @@ display(cleaned_df.limit(10))
 # COMMAND ----------
 
 # --- 4. Upsert into Lakebase `job_postings` -------------------------------
-# Lakebase is Postgres-compatible: write via the JDBC driver using
-# secrets stored in a Databricks secret scope (recommended over
-# hardcoding credentials).
+# Lakebase is Postgres-compatible: write via the native postgresql
+# connector using secrets stored in a Databricks secret scope
+# (recommended over hardcoding credentials).
 
 # Same secret written once by app/setup_secrets.py (scope="job_copilot",
 # key="lakebase-url"), so the notebook and the deployed app always point

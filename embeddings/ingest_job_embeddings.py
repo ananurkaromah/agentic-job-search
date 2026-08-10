@@ -1,5 +1,9 @@
 """
-Plain-Python (psycopg2-based) embedding ingestion for job_documents.
+Direct Vector Access embedding ingestion for job_documents.
+
+This script implements a Direct Vector Access pattern, storing embeddings
+directly in Lakebase (Postgres with pgvector) WITHOUT using Databricks
+Vector Search or automatic Delta table synchronization.
 
 Pipeline:
 1. Read job_documents rows that do not yet have embeddings for the
@@ -11,7 +15,7 @@ Pipeline:
 4. Embed each chunk using:
       sentence-transformers/all-MiniLM-L6-v2
    producing 384-dimensional vectors.
-5. Batch-upsert embeddings into job_embeddings using psycopg2.
+5. Batch-upsert embeddings into job_embeddings using psycopg2 and pgvector.
 
 Important database schema:
 
@@ -52,11 +56,73 @@ Optional:
 
 import argparse
 import logging
+import sys
 from typing import Optional
 
+import psycopg2
 from psycopg2.extras import execute_values
 
-from lakebase import ensure_job_schema, get_connection
+from app.lakebase import get_connection
+
+
+# ---------------------------------------------------------------------------
+# Schema Setup
+# ---------------------------------------------------------------------------
+
+def ensure_job_schema():
+    """
+    Ensure the required Lakebase tables exist.
+
+    Creates job_documents and job_embeddings tables if they don't exist.
+    Idempotent: safe to call multiple times.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Ensure pgvector extension is available
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
+            # Create job_documents table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS job_documents (
+                    id TEXT PRIMARY KEY,
+                    source_type TEXT NOT NULL,
+                    description_text TEXT,
+                    content_hash TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+
+            # Create job_embeddings table with pgvector extension
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS job_embeddings (
+                    id BIGSERIAL PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES job_documents(id) ON DELETE CASCADE,
+                    source_type TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    chunk_text TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    embedding VECTOR(384) NOT NULL,
+                    model_name TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    UNIQUE (document_id, chunk_index)
+                )
+            """)
+
+            # Create index on document_id for faster lookups
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_job_embeddings_document_id
+                ON job_embeddings(document_id)
+            """)
+
+            # Create index on content_hash for faster existence checks
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_job_embeddings_content_hash
+                ON job_embeddings(content_hash)
+            """)
+
+        conn.commit()
+
+    logger.info("Database schema verified/created successfully.")
 
 
 # ---------------------------------------------------------------------------
@@ -663,6 +729,22 @@ def run(
 # ---------------------------------------------------------------------------
 
 def main():
+    # Validate dependencies early
+    try:
+        import sentence_transformers
+    except ImportError as e:
+        raise ImportError(
+            "sentence-transformers package not found. "
+            "Install it with: pip install sentence-transformers"
+        ) from e
+
+    try:
+        import psycopg2
+    except ImportError as e:
+        raise ImportError(
+            "psycopg2 package not found. "
+            "Install it with: pip install psycopg2-binary"
+        ) from e
 
     parser = argparse.ArgumentParser(
         description=(
@@ -712,12 +794,20 @@ def main():
 
     args = parser.parse_args()
 
-    run(
-        batch_size=args.batch_size,
-        model_name=args.embedding_model,
-        chunk_size=args.chunk_size,
-        chunk_overlap=args.chunk_overlap,
-    )
+    try:
+        total = run(
+            batch_size=args.batch_size,
+            model_name=args.embedding_model,
+            chunk_size=args.chunk_size,
+            chunk_overlap=args.chunk_overlap,
+        )
+        logger.info("Job completed successfully. Total embeddings processed: %d", total)
+    except psycopg2.Error as e:
+        logger.error("Database error: %s", e)
+        raise
+    except Exception as e:
+        logger.error("Unexpected error: %s", e, exc_info=True)
+        raise
 
 
 if __name__ == "__main__":

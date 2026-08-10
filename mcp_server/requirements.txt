@@ -1,0 +1,4 @@
+mcp
+psycopg2-binary
+sentence-transformers
+databricks-sdk

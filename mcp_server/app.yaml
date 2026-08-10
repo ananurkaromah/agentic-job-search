@@ -1,0 +1,7 @@
+command: ["python", "server.py"]
+
+env:
+  - name: "LAKEBASE_SECRET_SCOPE"
+    value: "job_copilot"
+  - name: "LAKEBASE_SECRET_KEY"
+    value: "lakebase-url"
