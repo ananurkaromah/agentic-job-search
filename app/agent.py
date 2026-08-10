@@ -9,12 +9,15 @@
 import json
 import os
 
+from databricks.sdk import WorkspaceClient
 from openai import OpenAI
 
 import agent_tools as tools
 
-DATABRICKS_HOST = os.environ["DATABRICKS_HOST"]          # e.g. https://<workspace>.databricks.com
-DATABRICKS_TOKEN = os.environ["DATABRICKS_TOKEN"]
+# Use WorkspaceClient for automatic authentication in Databricks Apps
+w = WorkspaceClient()
+DATABRICKS_HOST = w.config.host
+DATABRICKS_TOKEN = w.config.token
 FM_ENDPOINT = "databricks-meta-llama-3-3-70b-instruct"
 
 client = OpenAI(
