@@ -30,11 +30,11 @@ Two things run independently in this project: **notebooks/jobs** (run manually o
 agentic-job-search/
 ├── README.md
 ├── requirements.txt
-├── setup_secrets.py              # run once, from your terminal 
+├── setup_secrets.py              # run once, from your terminal — not deployed anywhere
 ├── sql/
 │   └── lakebase_schema.sql       # run once against Lakebase, via SQL editor
 ├── etl/                          # ── run as notebooks / a scheduled Workflow ──
-│   ├── fetch_live_jobs.py        # pulls live listings into the Volume
+│   ├── fetch_live_jobs.py        # optional: pulls live listings into the Volume
 │   └── etl_pipeline.py           # raw JSON -> normalized -> Lakebase upsert
 ├── vector_search/
 │   └── vector_search_setup.py    # run once (or on schema change) to build the indexes
@@ -79,18 +79,19 @@ Streamlit frontend with four tabs: Profile Setup, Semantic Job Search & Match Ex
 Credential handling: `setup_secrets.py` is a one-time script (run from your terminal or a notebook) that stores the Lakebase connection URL as a Databricks secret. `lakebase.py` reads that secret at runtime inside the deployed app — the URL is never committed to the repo or written into `app.yaml`.
 
 **`samples/*.json`**
-One example raw payload per source API, used to test the ETL pipeline before wiring up live API calls (see the note on live fetching in the setup steps below).
+One example raw payload per source API, used to test the ETL pipeline before wiring up live API calls via `fetch_live_jobs.py`.
 
 ## Setup & Deployment Instructions
 
-1. **Populate the Volume.** Either upload the static payloads from `samples/` into `/Volumes/main/default/job_data/{adzuna,remoteok,usajobs}/` by hand, **or** run `etl/fetch_live_jobs.py` as a notebook to pull current listings automatically (requires the API secrets from step 3).
-2. **Create the Lakebase schema.** Provision a Lakebase project, connect with its SQL editor (or psql), and run `sql/lakebase_schema.sql`.
-3. **Store secrets.** Create a native-password role on the Lakebase instance, then run `python setup_secrets.py` once from a terminal with Databricks auth configured. This stores the Lakebase connection URL under scope `job_copilot`, key `lakebase-url`. The same run also prompts (optionally, leave blank to skip) for Adzuna `app_id`/`app_key` and USAJobs `Authorization-Key`/email, needed only if you're using `fetch_live_jobs.py`. Read access is granted to workspace users.
-4. **Run the ETL.** Open `etl/etl_pipeline.py` as a notebook and run it (or schedule it, after `fetch_live_jobs.py`, as a Databricks Workflow for recurring ingestion). It reads `LAKEBASE_URL` from the same `job_copilot/lakebase-url` secret.
-5. **Set up Vector Search.** Sync `job_postings` / `profiles` into Delta tables with Change Data Feed enabled, then run `vector_search/vector_search_setup.py` to create the endpoint and both indexes.
-6. **Configure app secrets/env.** Set `DATABRICKS_HOST` and `DATABRICKS_TOKEN` as app environment variables (for the Foundation Model call in `agent.py`). Lakebase access needs no separate env var — `app/lakebase.py` reads it from the secret automatically.
-7. **Deploy the app.** From the `app/` folder, run `databricks apps deploy`, using `app.py` + `app.yaml` as the entrypoint.
-8. **Verify.** Open the deployed app URL, fill in a profile on the Profile Setup tab, then try a semantic search and a chat message to confirm the agent can read and write to Lakebase.
+1. **Provision Lakebase.** Create a Lakebase project and a native-password role on it.
+2. **Store secrets.** Run `python setup_secrets.py` once from a terminal with Databricks auth configured. This stores the Lakebase connection URL under scope `job_copilot`, key `lakebase-url` (required). The same run also prompts — optionally, leave blank to skip — for Adzuna `app_id`/`app_key` and USAJobs `Authorization-Key`/email, needed only if you plan to use `fetch_live_jobs.py`. Read access is granted to workspace users.
+3. **Create the Lakebase schema.** Connect with the Lakebase SQL editor (or psql) and run `sql/lakebase_schema.sql`.
+4. **Populate the Volume.** Either upload the static payloads from `samples/` into `/Volumes/main/default/job_data/{adzuna,remoteok,usajobs}/` by hand, **or** run `etl/fetch_live_jobs.py` as a notebook to pull current listings automatically (uses the API secrets from step 2).
+5. **Run the ETL.** Open `etl/etl_pipeline.py` as a notebook and run it (or schedule it, after `fetch_live_jobs.py` if using live data, as a Databricks Workflow for recurring ingestion). It reads `LAKEBASE_URL` from the same `job_copilot/lakebase-url` secret.
+6. **Set up Vector Search.** Sync `job_postings` / `profiles` into Delta tables with Change Data Feed enabled, then run `vector_search/vector_search_setup.py` to create the endpoint and both indexes.
+7. **Configure app secrets/env.** Set `DATABRICKS_HOST` and `DATABRICKS_TOKEN` as app environment variables (for the Foundation Model call in `agent.py`). Lakebase access needs no separate env var — `app/lakebase.py` reads it from the secret automatically.
+8. **Deploy the app.** From the `app/` folder, run `databricks apps deploy`, using `app.py` + `app.yaml` as the entrypoint.
+9. **Verify.** Open the deployed app URL, fill in a profile on the Profile Setup tab, then try a semantic search and a chat message to confirm the agent can read and write to Lakebase.
 
 ## Status
 
