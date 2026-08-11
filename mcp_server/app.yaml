@@ -1,7 +1,7 @@
-command: ["python", "server.py"]
+command: ["streamlit", "run", "app/app.py", "--server.port=8080"]
 
 env:
   - name: "LAKEBASE_SECRET_SCOPE"
-    value: "job_copilot"
+    value: "database"
   - name: "LAKEBASE_SECRET_KEY"
     value: "lakebase-url"

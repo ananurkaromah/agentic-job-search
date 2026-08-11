@@ -1,6 +1,6 @@
-databricks-vectorsearch
 databricks-sdk
 psycopg2-binary
-openai
-streamlit
-pandas
+flask
+requests
+sentence-transformers
+mcp

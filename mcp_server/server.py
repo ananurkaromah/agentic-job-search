@@ -3,12 +3,11 @@ mcp_server/server.py
 
 Exposes the AI Job Hunting Copilot's read/write tools as an MCP server,
 so any MCP-compliant client (Databricks Playground, Claude Desktop,
-another agent, agent.py itself) can call them over a network connection
-instead of only via an in-process Python import.
+another agent) can call them over a network connection.
 
 Deployed as its own Databricks App (separate from app/, which serves the
-Streamlit UI). Uses the streamable-HTTP transport, which Databricks Apps
-can front with OAuth like any other app.
+Flask sync-dashboard UI). Uses the streamable-HTTP transport, which
+Databricks Apps can front with OAuth like any other app.
 
 Run locally for testing:
     python server.py            # serves on http://localhost:8000/mcp
@@ -38,7 +37,7 @@ mcp = FastMCP("job-copilot-mcp")
 
 @mcp.tool()
 def search_and_rank_jobs(user_id: str, query_text: str, top_k: int = 10) -> list[dict]:
-    """Semantic search over job_postings via Databricks Vector Search,
+    """Semantic search over job_postings via pgvector,
     ranked by relevance to query_text."""
     return tools.search_and_rank_jobs(user_id, query_text, top_k)
 
@@ -47,8 +46,8 @@ def search_and_rank_jobs(user_id: str, query_text: str, top_k: int = 10) -> list
 def semantic_search_embeddings(
     query_text: str, top_k: int = 10, source_type: str | None = None
 ) -> list[dict]:
-    """Semantic search over job_embeddings (Direct Vector Access / pgvector),
-    covering both job postings and resumes chunked and embedded via
+    """Chunk-level semantic search over job_embeddings (pgvector), covering
+    both job postings and resumes chunked and embedded via
     ingest_job_embeddings.py. Use source_type='job_posting' or 'resume'
     to narrow the search."""
     return search_job_embeddings(query_text, top_k=top_k, source_type=source_type)

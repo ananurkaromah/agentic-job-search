@@ -1,140 +1,135 @@
 # agentic-job-search
 
-An agentic AI application for intelligent job discovery, job matching, and application management using Databricks Apps, Lakebase, Vector Search/RAG, and AI Agents.
-
-Built 100% inside the Databricks Workspace UI on Databricks Free Edition.
+An agentic AI application for intelligent job discovery, job matching, and application management using Databricks Apps, Lakebase, pgvector, and AI Agents (via MCP).
 
 ## Overview
 
-The app ingests job postings from multiple sources, stores structured data in Lakebase (Postgres), indexes unstructured text (job descriptions, resumes) for semantic search, and exposes an AI agent that can search, explain matches, and manage a user's application pipeline — all through a Streamlit UI deployed as a Databricks App. Those same tools are also exposed over MCP, so other AI agents (Databricks Playground, Claude Desktop, third-party agents) can use them too, not just the built-in chat tab.
+The app ingests job postings from multiple sources into Lakebase (Postgres), embeds job descriptions and resumes directly into `pgvector` for semantic search, and exposes agent tools — search, explain-match, and application pipeline read/write — over MCP so any MCP-compliant agent (Databricks Playground, Claude Desktop, etc.) can use them. A small Flask app provides an operational dashboard for triggering sync jobs and inspecting synced data.
+
+There is no Databricks Vector Search, no Delta table mirroring, and no Change Data Feed anywhere in this project — semantic search is pgvector, directly against Lakebase, end to end.
 
 ## Architecture
 
 ```
-Volume (raw JSON) → PySpark ETL → Lakebase (Postgres) — 8 relational tables
+Volume (raw JSON) → PySpark ETL → Lakebase (Postgres) — job_postings, profiles, ...
                                         ↓
-                    ┌───────────────────┴───────────────────┐
-                    ↓                                       ↓
-      Delta mirror → Vector Search           job_documents → chunk + embed
-      (1 endpoint, 2 indexes:                 (sentence-transformers,
-       job_postings, profiles)                 384-dim) → job_embeddings
-                    ↓                          (pgvector, Direct Vector Access)
-                    └───────────────────┬───────────────────┘
+                     sync_documents.py (plain SQL, same DB)
                                         ↓
-                     Agent tools (search, explain match, pipeline
-                     read/write) via a 2X-Small SQL Warehouse
+                              job_documents (source text)
                                         ↓
-                    ┌───────────────────┴───────────────────┐
-                    ↓                                       ↓
-      Streamlit App (Databricks Apps)          MCP Server (Databricks Apps)
-      — 4-tab UI, in-process agent.py          — same tools, exposed over
-                                                  MCP for other agents/clients
+                     ingest_job_embeddings.py (chunk + embed,
+                     sentence-transformers, 384-dim)
+                                        ↓
+                    job_embeddings (pgvector) ←──────────────┐
+                                        ↓                     │
+                     agent_tools.py — search via pgvector      │  same Lakebase,
+                     <=> operator, plus read/write tools       │  read directly
+                                        ↓                     │
+                    ┌───────────────────┴────────────────────┐│
+                    ↓                                        ↓│
+      mcp_server/ (Databricks App)              app/ (Databricks App)
+      — MCP server exposing agent tools         — Flask dashboard: trigger
+        to Playground / other agents              sync jobs, browse records
 ```
 
-Two vector search paths exist side by side: **Databricks Vector Search** (managed, over the Delta-synced `job_postings`/`profiles` tables) and **Direct Vector Access** (`job_documents`/`job_embeddings` in Lakebase via pgvector, embedded locally with `sentence-transformers`). They're independent — use either or both.
+Two separate Databricks Apps, two separate jobs:
+- **`app/`** — the required "Databricks App with a frontend." A Flask dashboard for operational visibility: trigger sync jobs (via the Databricks Jobs API) and browse synced tables. No agent logic lives here.
+- **`mcp_server/`** — the required "AI agent with tools that search/retrieve and take real actions." Not itself the agent — it's the tool layer an agent (running in Databricks Playground, Claude Desktop, or elsewhere) connects to over MCP to actually search job postings, explain matches, and read/write the application pipeline.
 
 ## Project Structure
 
-Three things run independently in this project: **notebooks/jobs** (run manually or on a schedule inside the workspace), and two **deployed apps** (each a self-contained unit Databricks Apps ships as-is). The folders below reflect that split — everything under `app/` or `mcp_server/` has to be importable from within that same folder only, since that's the one folder that actually gets deployed.
+Every deployed app folder is self-contained: Databricks Apps only uploads the one folder you point a deployment at, so anything that folder's code imports has to live inside it — including its own `requirements.txt`.
 
 ```
 agentic-job-search/
 ├── README.md
-├── requirements.txt
-├── setup_secrets.py              # run once, from your terminal — not deployed anywhere
+├── requirements.txt               # combined set, for local dev reference only
+├── setup_secrets.py                # run once, from your terminal — not deployed anywhere
 
 ├── sql/
-│   └── lakebase_schema.sql       # run once against Lakebase, via SQL editor
+│   └── lakebase_schema.sql         # all 10 tables, incl. job_documents/job_embeddings + pgvector extension
 
-├── etl/                          # ── run as notebooks / a scheduled Workflow ──
-│   ├── fetch_live_jobs.py        # optional: pulls live listings into the Volume
-│   └── etl_pipeline.py           # raw JSON -> normalized -> Lakebase upsert
+├── etl/                             # ── run as notebooks / a scheduled Workflow ──
+│   ├── fetch_live_jobs.py          # optional: pulls live listings into the Volume
+│   └── etl_pipeline.py             # raw JSON -> normalized -> Lakebase upsert
 
-├── vector_search/
-│   ├── sync_lakebase_to_delta.py # reads Lakebase -> writes Delta mirrors w/ CDF
-│   └── vector_search_setup.py    # run once (or on schema change) to build the indexes
+├── embeddings/                      # ── pgvector pipeline, run as Databricks Jobs ──
+│   ├── sync_documents.py           # job_postings/profiles -> job_documents (plain SQL, same DB)
+│   ├── ingest_job_embeddings.py    # chunk + embed job_documents -> job_embeddings
+│   └── search_job_embeddings.py    # query-side: cosine search over job_embeddings
 
-├── embeddings/                   # ── Direct Vector Access (pgvector), run as a Job ──
-│   ├── ingest_job_embeddings.py  # chunk + embed job_documents -> job_embeddings
-│   └── search_job_embeddings.py  # query-side: cosine search over job_embeddings
+├── app/                             # ── deployed as its own unit: Flask dashboard ──
+│   ├── api.py                      # routes: trigger syncs, read synced records
+│   ├── app.yaml                    # deployment config incl. sync job ID env vars
+│   ├── requirements.txt            # this app's own dependency set
+│   ├── lakebase.py                 # Lakebase connection helper
+│   └── templates/
+│       └── index.html              # dashboard UI (buttons + records table)
 
-├── app/                          # ── deployed as one unit via `databricks apps deploy` ──
-│   ├── app.py                    # Streamlit UI (4 tabs)
-│   ├── app.yaml                  # deployment config (entrypoint, env vars)
-│   ├── agent.py                  # Foundation Model orchestration + function calling
-│   ├── agent_tools.py            # read/write tool functions, used by agent.py
-│   └── lakebase.py               # Lakebase connection helper, imported by app.py & agent_tools.py
-
-├── mcp_server/                   # ── deployed as its own unit via `databricks apps deploy` ──
-│   ├── server.py                 # FastMCP server exposing the same tools over MCP
-│   ├── app.yaml                  # deployment config
-│   ├── requirements.txt          # this app's own dependency set
-│   ├── agent_tools.py            # copy of app/agent_tools.py — see note below
-│   ├── lakebase.py               # copy of app/lakebase.py — see note below
-│   └── search_job_embeddings.py  # copy of embeddings/search_job_embeddings.py
+├── mcp_server/                      # ── deployed as its own unit: agent tool layer ──
+│   ├── server.py                   # FastMCP server exposing agent_tools.py over MCP
+│   ├── app.yaml                    # deployment config
+│   ├── requirements.txt            # this app's own dependency set
+│   ├── agent_tools.py              # read/write tool functions (pgvector search + Lakebase r/w)
+│   ├── lakebase.py                 # copy of app/lakebase.py — see note below
+│   └── search_job_embeddings.py    # copy of embeddings/search_job_embeddings.py
 
 └── samples/
-    ├── adzuna_sample.json        # example raw payload per source
+    ├── adzuna_sample.json          # example raw payload per source
     ├── remoteok_sample.json
     └── usajobs_sample.json
 ```
 
-`lakebase.py` lives inside `app/` — not at the repo root — because `app.py` and `agent_tools.py` import it with a plain same-directory import (`from lakebase import get_connection`). Since Databricks Apps only uploads the `app/` folder to that app's compute, anything that folder's code imports has to live inside it too. The same rule is why `mcp_server/` carries its own copies of `agent_tools.py`, `lakebase.py`, and `search_job_embeddings.py` instead of importing across folders — it's deployed separately from `app/`, so it needs everything it uses inside its own folder. `etl_pipeline.py`, `fetch_live_jobs.py`, and `embeddings/ingest_job_embeddings.py` don't have this constraint — they run as notebooks/jobs with the full repo checked out, so `ingest_job_embeddings.py` importing `from app.lakebase import get_connection` across folders works fine there.
+`app/` and `mcp_server/` don't share code by import — `mcp_server/lakebase.py` and `mcp_server/search_job_embeddings.py` are copies, not imports, of their `app/`/`embeddings/` counterparts, because each app folder is deployed independently and only ships with itself. `etl_pipeline.py`, `fetch_live_jobs.py`, `sync_documents.py`, and `ingest_job_embeddings.py` don't have this constraint — they run as notebooks/jobs with the full repo checked out, so `from app.lakebase import get_connection` works fine there (note: this is the repo-root `app/lakebase.py`, unrelated to Databricks Apps' `app/` deployment folder sharing the same name).
 
 ## Core Components
 
-**`etl/fetch_live_jobs.py`**
-Optional replacement for the manual sample upload. Pulls current listings from Adzuna and USAJobs (both need API credentials from `setup_secrets.py`) and RemoteOK (public, no key), writing timestamped JSON files into the same Volume folders `etl_pipeline.py` already reads. Run it before `etl_pipeline.py` in the same Workflow job to keep data fresh.
-
 **`sql/lakebase_schema.sql`**
-DDL for the 8 relational tables: `users`, `profiles`, `skills`, `job_postings`, `applications`, `saved_jobs`, `interview_notes`, `contacts`. `job_postings` is deduplicated on `(source_api, external_id)` so re-running the ETL is idempotent.
+DDL for all 10 tables in one file: the original 8 (`users`, `profiles`, `skills`, `job_postings`, `applications`, `saved_jobs`, `interview_notes`, `contacts`) plus `job_documents` and `job_embeddings`, and `CREATE EXTENSION IF NOT EXISTS vector`. This is the single source of truth for the schema — run it first, on every fresh Lakebase instance.
 
-**`etl/etl_pipeline.py`**
-PySpark notebook that reads raw JSON per source from the Volume, normalizes Adzuna/RemoteOK/USAJobs into one common schema, strips HTML/URLs from descriptions, and upserts into `job_postings` via a staging table + `MERGE`. Writes through the native `postgresql` Spark connector (not JDBC), and casts `job_id`/`vector_id` to `::uuid` in the merge.
+**`etl/fetch_live_jobs.py`** and **`etl/etl_pipeline.py`**
+Unchanged from before: pull raw listings into the Volume (optional, live path) and normalize/upsert them into `job_postings` via PySpark, using the native `postgresql` Spark connector.
 
-**`vector_search/sync_lakebase_to_delta.py`**
-Reads `job_postings` and `profiles` directly from Lakebase (via the same native `postgresql` connector `etl_pipeline.py` writes with) and overwrites `workspace.default.job_postings_delta` / `workspace.default.profiles_delta`, enabling Change Data Feed on both. Run this before `vector_search_setup.py` — and again any time you want the mirrors (and Vector Search indexes, once synced) to reflect current Lakebase data.
-
-**`vector_search/vector_search_setup.py`**
-Creates one Databricks Vector Search endpoint and two Databricks-managed-embedding indexes: `job_postings_index` (over `clean_description`) and `profiles_index` (over `resume_text`), using `databricks-bge-large-en`. Verifies both Delta mirrors exist first (fails with a clear message pointing at `sync_lakebase_to_delta.py` if not) rather than assuming they're already there. Includes an example hybrid semantic query.
+**`embeddings/sync_documents.py`**
+Replaces the old Delta/CDF sync entirely. `job_postings` and `job_documents` live in the same Lakebase database, so this is a plain `INSERT ... SELECT ... ON CONFLICT` — no Spark, no Delta, no external mirror table. Copies `job_postings.clean_description` and `profiles.resume_text` into `job_documents`, tagging each with `source_type` and a `content_hash` that `ingest_job_embeddings.py` uses to decide what needs (re-)embedding.
 
 **`embeddings/ingest_job_embeddings.py`**
-Direct Vector Access alternative to Databricks Vector Search: chunks `job_documents.description_text` (800 chars, 100 overlap), embeds each chunk locally with `sentence-transformers/all-MiniLM-L6-v2` (384-dim), and upserts into `job_embeddings` (pgvector) — idempotent via `content_hash` and `ON CONFLICT (document_id, chunk_index)`. Run as a Databricks Job.
+Chunks `job_documents.description_text` (800 chars, 100 overlap), embeds each chunk locally with `sentence-transformers/all-MiniLM-L6-v2` (384-dim), upserts into `job_embeddings` (pgvector) — idempotent via `content_hash` + `ON CONFLICT (document_id, chunk_index)`. Run as a Databricks Job, after `sync_documents.py`.
 
 **`embeddings/search_job_embeddings.py`**
-Query-side counterpart — embeds a query with the same model and runs a pgvector cosine-similarity search (`<=>`) over `job_embeddings`, joined back to `job_documents`. This is what both `app/agent_tools.py` (if wired up) and the MCP server's `semantic_search_embeddings` tool call.
+Query-side counterpart — embeds a query with the same model, runs pgvector's `<=>` cosine search over `job_embeddings`, joined back to `job_documents`. Used directly by `mcp_server`'s `semantic_search_embeddings` tool, and by `agent_tools.py`'s `search_and_rank_jobs` (which additionally joins to `job_postings` for full posting details).
 
-**`app/agent_tools.py`**
-Plain Python functions the agent calls as tools — three read tools (`search_and_rank_jobs`, `explain_job_match`, `surface_stale_applications`) and three write tools (`update_application_stage`, `draft_tailored_materials`, `add_interview_note`), all executing against Lakebase through `lakebase.py`.
-
-**`app/agent.py`**
-Wires `agent_tools.py` functions as OpenAI-style function-calling tools for a Databricks Foundation Model serving endpoint, looping tool calls (capped at 5 per turn) until the model returns a final answer.
-
-**`app/app.py`**
-Streamlit frontend with four tabs: Profile Setup, Semantic Job Search & Match Explanation, Application Pipeline (Kanban/Table), and Chat with the Agent.
-
-**`app/lakebase.py` + `setup_secrets.py`**
-Credential handling: `setup_secrets.py` is a one-time script (run from your terminal) that stores the Lakebase connection URL, plus optional Adzuna/USAJobs API keys, as Databricks secrets under scope `job_copilot`. `lakebase.py` reads the Lakebase secret at runtime inside the deployed app — the URL is never committed to the repo or written into `app.yaml`.
+**`mcp_server/agent_tools.py`**
+Six tool functions: three read (`search_and_rank_jobs` — now pgvector-based, no Vector Search endpoint involved; `explain_job_match`; `surface_stale_applications`) and three write (`update_application_stage`, `draft_tailored_materials`, `add_interview_note`), all executing against Lakebase directly.
 
 **`mcp_server/server.py`**
-A `FastMCP` server that wraps every `agent_tools.py` function plus `semantic_search_embeddings` as MCP tools, deployed as its own Databricks App on the `streamable-http` transport. Any MCP-compliant client (Databricks Playground, Claude Desktop, another agent) can connect to it and call the same read/write tools the Streamlit chat tab uses — over the network, with Databricks Apps' built-in OAuth handling auth.
+A `FastMCP` server wrapping every `agent_tools.py` function plus `semantic_search_embeddings` as MCP tools, deployed as its own Databricks App on the `streamable-http` transport. Connect an agent to it (Databricks Playground's "Add MCP server," Claude Desktop, etc.) to get real search + read + write capability — this is what satisfies the "AI agent with tools" requirement.
+
+**`app/api.py`**
+Flask routes: list configured sync jobs, trigger one via `jobs.run_now`, poll its run status, and read recent rows from a whitelisted set of tables (`job_postings`, `applications`, `job_documents`, `job_embeddings`). Purely operational — no agent logic. This satisfies the "Databricks App with a frontend" requirement.
+
+**`app/templates/index.html`**
+The dashboard itself: a button per configured sync (polls run status after triggering), and a table selector that fetches and renders recent rows from `/api/records/<table>`.
+
+**`app/lakebase.py`, `mcp_server/lakebase.py`, `setup_secrets.py`**
+Credential handling, unchanged from before: `setup_secrets.py` stores the Lakebase URL (and optional Adzuna/USAJobs keys) as Databricks secrets under scope `job_copilot`; each app's `lakebase.py` reads the Lakebase secret at runtime via the SDK. Neither app needs `DATABRICKS_HOST`/`DATABRICKS_TOKEN` secrets anymore — `app/api.py` uses `WorkspaceClient()`'s ambient Databricks Apps credentials to call the Jobs API, and `mcp_server/` never calls the Foundation Model API directly (that's the connecting agent's job, not the tool server's).
 
 **`samples/*.json`**
-One example raw payload per source API, used to test the ETL pipeline before wiring up live API calls via `fetch_live_jobs.py`.
+Example raw payloads per source API, for testing `etl_pipeline.py` before wiring up `fetch_live_jobs.py`.
 
 ## Setup & Deployment Instructions
 
-1. **Provision Lakebase.** Create a Lakebase project and a native-password role on it. Enable the `pgvector` extension if you plan to use Direct Vector Access (`embeddings/ingest_job_embeddings.py` also does this automatically on first run).
-2. **Store secrets.** Run `python setup_secrets.py` once from a terminal with Databricks auth configured. This stores the Lakebase connection URL under scope `job_copilot`, key `lakebase-url` (required). The same run also prompts — optionally, leave blank to skip — for Adzuna `app_id`/`app_key` and USAJobs `Authorization-Key`/email, needed only if you plan to use `fetch_live_jobs.py`. Read access is granted to workspace users.
-3. **Create the Lakebase schema.** Connect with the Lakebase SQL editor (or psql) and run `sql/lakebase_schema.sql`.
-4. **Populate the Volume.** Either upload the static payloads from `samples/` into `/Volumes/workspace/default/job_data/{adzuna,remoteok,usajobs}/` by hand, **or** run `etl/fetch_live_jobs.py` as a notebook to pull current listings automatically (uses the API secrets from step 2).
-5. **Run the ETL.** Open `etl/etl_pipeline.py` as a notebook and run it (or schedule it, after `fetch_live_jobs.py` if using live data, as a Databricks Workflow for recurring ingestion). It reads `LAKEBASE_URL` from the same `job_copilot/lakebase-url` secret.
-6. **Set up Vector Search (Databricks-managed).** Run `vector_search/sync_lakebase_to_delta.py` to create `workspace.default.job_postings_delta` and `workspace.default.profiles_delta` from Lakebase with Change Data Feed enabled, then run `vector_search/vector_search_setup.py` to create the endpoint and both indexes.
-7. **Set up Direct Vector Access (optional, alternative/complementary path).** Populate `job_documents` with the text you want searchable, then run `embeddings/ingest_job_embeddings.py` as a Databricks Job to chunk, embed, and upsert into `job_embeddings`.
-8. **Configure app secrets/env.** Set `DATABRICKS_HOST` and `DATABRICKS_TOKEN` as app environment variables on `app/` (for the Foundation Model call in `agent.py`). Lakebase access needs no separate env var — `lakebase.py` reads it from the secret automatically.
-9. **Deploy the Streamlit app.** From the `app/` folder, run `databricks apps deploy`, using `app.py` + `app.yaml` as the entrypoint.
-10. **Deploy the MCP server (optional).** From the `mcp_server/` folder, run `databricks apps deploy` separately, using `server.py` + its own `app.yaml`. This gives every tool a second, network-reachable entry point over MCP.
-11. **Verify.** Open the Streamlit app URL, fill in a profile on the Profile Setup tab, then try a semantic search and a chat message. For the MCP server, connect an MCP client (e.g. Databricks Playground or Claude Desktop) to its deployed URL with a Databricks auth token and confirm the tools list appears.
+1. **Provision Lakebase.** Create a Lakebase project and a native-password role on it.
+2. **Store secrets.** Run `python setup_secrets.py` once from a terminal with Databricks auth configured — stores the Lakebase URL under `job_copilot/lakebase-url` (required), plus optional Adzuna/USAJobs API keys if you'll use `fetch_live_jobs.py`.
+3. **Create the schema.** Run `sql/lakebase_schema.sql` via the Lakebase SQL editor or `psql` — creates all 10 tables and enables `pgvector` in one pass.
+4. **Populate the Volume.** Upload `samples/*.json` by hand, or run `etl/fetch_live_jobs.py` as a notebook.
+5. **Run the ETL.** Run `etl/etl_pipeline.py` as a notebook (or schedule it as a Workflow) to populate `job_postings`.
+6. **Sync documents.** Run `embeddings/sync_documents.py` to copy `job_postings`/`profiles` text into `job_documents`.
+7. **Generate embeddings.** Run `embeddings/ingest_job_embeddings.py` (as a Databricks Job — needs `sentence-transformers` + `psycopg2-binary` on the job cluster) to populate `job_embeddings`.
+8. **Create Databricks Jobs for each pipeline step**, if you want `app/api.py`'s dashboard to be able to trigger them: Workflows → Create Job, one task each for `fetch_live_jobs.py`, `etl_pipeline.py`, `sync_documents.py`, `ingest_job_embeddings.py`. Note each Job ID.
+9. **Deploy the Flask dashboard.** Create app `job-copilot-app` in the Apps UI, upload the 5 files/folders under `app/` into its source folder, set the `*_JOB_ID` env vars in `app.yaml` to the IDs from step 8, add the `job_copilot`/`lakebase-url` secret as a Resource, and grant the app's service principal `CAN_MANAGE_RUN` on each of those Jobs so it can trigger them. Deploy.
+10. **Deploy the MCP server.** Create app `job-copilot-mcp`, upload the 6 files under `mcp_server/`, add the same `lakebase-url` secret Resource, deploy.
+11. **Verify.** Open `job-copilot-app`'s URL — confirm the dashboard loads, trigger a sync, confirm records show up under the relevant table. Connect an MCP client to `job-copilot-mcp`'s URL and confirm all 7 tools appear; run a search and a write action through it (e.g. via Databricks Playground) to confirm the agent requirement end-to-end.
 
 ## Status
 

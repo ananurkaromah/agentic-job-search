@@ -8,6 +8,10 @@
 CREATE SCHEMA IF NOT EXISTS job_copilot;
 SET search_path TO job_copilot;
 
+-- pgvector: all semantic search (job postings + resumes) goes through
+-- this extension directly -- no Databricks Vector Search, no Delta sync.
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- 1. users -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS users (
     user_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -100,3 +104,33 @@ CREATE TABLE IF NOT EXISTS contacts (
     linkedin_url        TEXT,
     application_id      UUID REFERENCES applications(application_id) ON DELETE SET NULL
 );
+
+-- 9. job_documents -------------------------------------------------------
+-- Source text for embedding: one row per job posting or resume, populated
+-- by embeddings/sync_documents.py directly from job_postings/profiles
+-- (plain SQL, same database -- no Spark, no Delta involved).
+CREATE TABLE IF NOT EXISTS job_documents (
+    id                  TEXT PRIMARY KEY,       -- job_postings.job_id or profiles.profile_id, as text
+    source_type         TEXT NOT NULL,          -- 'job_posting' or 'resume'
+    description_text    TEXT,
+    content_hash        TEXT NOT NULL,          -- md5 of description_text; drives re-embedding
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 10. job_embeddings ------------------------------------------------------
+-- Chunked, embedded text for pgvector similarity search. Populated by
+-- embeddings/ingest_job_embeddings.py. all-MiniLM-L6-v2 -> 384 dimensions.
+CREATE TABLE IF NOT EXISTS job_embeddings (
+    id                  BIGSERIAL PRIMARY KEY,
+    document_id         TEXT NOT NULL REFERENCES job_documents(id) ON DELETE CASCADE,
+    source_type         TEXT NOT NULL,
+    chunk_index         INTEGER NOT NULL,
+    chunk_text          TEXT NOT NULL,
+    content_hash        TEXT NOT NULL,
+    embedding           VECTOR(384) NOT NULL,
+    model_name          TEXT NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (document_id, chunk_index)
+);
+CREATE INDEX IF NOT EXISTS idx_job_embeddings_document_id ON job_embeddings(document_id);
+CREATE INDEX IF NOT EXISTS idx_job_embeddings_content_hash ON job_embeddings(content_hash);

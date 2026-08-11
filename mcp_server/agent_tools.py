@@ -1,35 +1,49 @@
 # ==============================================================
 # agent_tools.py
-# Python function tools the AI Agent calls to read/write Lakebase
-# data and query the Vector Search index. Each function is plain
-# Python; agent.py wraps these as callable "tools" for the LLM.
+# Python function tools the AI Agent calls to read/write Lakebase data.
+# All semantic search goes through pgvector (job_embeddings) directly --
+# no Databricks Vector Search, no Delta sync. Each function is plain
+# Python; server.py (MCP) wraps these as callable tools for the LLM.
 # ==============================================================
 
 from datetime import date, datetime
 
-from databricks.vector_search.client import VectorSearchClient
+from lakebase import get_connection
+from search_job_embeddings import embed_query
 
-from lakebase import get_connection as _get_conn
 
-VS_ENDPOINT = "job_copilot_vs_endpoint"
-JOB_INDEX_NAME = "workspace.default.job_postings_index"
-
-vsc = VectorSearchClient()
+def _get_conn():
+    return get_connection()
 
 
 # ----------------------- READ TOOLS -----------------------------------
 
+# Ranks distinct job_postings by best-matching chunk similarity (a job can
+# have multiple chunks; DISTINCT ON keeps only the closest one per job).
+SEARCH_AND_RANK_JOBS_SQL = """
+SELECT job_id, title, company, location, salary_range, clean_description, similarity
+FROM (
+    SELECT DISTINCT ON (jp.job_id)
+        jp.job_id, jp.title, jp.company, jp.location, jp.salary_range, jp.clean_description,
+        1 - (e.embedding <=> %(query_vector)s::vector) AS similarity
+    FROM job_copilot.job_embeddings AS e
+    JOIN job_copilot.job_postings AS jp ON jp.job_id::text = e.document_id
+    WHERE e.source_type = 'job_posting'
+    ORDER BY jp.job_id, e.embedding <=> %(query_vector)s::vector
+) ranked
+ORDER BY similarity DESC
+LIMIT %(top_k)s;
+"""
+
+
 def search_and_rank_jobs(user_id: str, query_text: str, top_k: int = 10) -> list[dict]:
-    """Semantic search over job_postings, ranked by relevance to query_text."""
-    index = vsc.get_index(VS_ENDPOINT, JOB_INDEX_NAME)
-    results = index.similarity_search(
-        query_text=query_text,
-        columns=["job_id", "title", "company", "location", "salary_range", "clean_description"],
-        num_results=top_k,
-    )
-    rows = results["result"]["data_array"]
-    cols = ["job_id", "title", "company", "location", "salary_range", "clean_description", "score"]
-    return [dict(zip(cols, r)) for r in rows]
+    """Semantic search over job_postings via pgvector, ranked by relevance
+    to query_text. Requires embeddings/sync_documents.py and
+    embeddings/ingest_job_embeddings.py to have run first."""
+    query_vector = embed_query(query_text)
+    with _get_conn() as conn, conn.cursor() as cur:
+        cur.execute(SEARCH_AND_RANK_JOBS_SQL, {"query_vector": query_vector, "top_k": top_k})
+        return [dict(row) for row in cur.fetchall()]
 
 
 def explain_job_match(user_id: str, job_id: str) -> dict:
@@ -90,8 +104,9 @@ def update_application_stage(application_id: str, new_stage: str) -> dict:
 def draft_tailored_materials(user_id: str, job_id: str, material_type: str) -> str:
     """
     Build the prompt context for a cover letter / tailored resume bullet set.
-    The actual text generation happens in agent.py via the Foundation Model
-    call — this tool just assembles grounded context (profile + job posting).
+    The actual text generation happens in the calling agent (e.g. via a
+    Foundation Model call in Playground or another agent) -- this tool
+    just assembles grounded context (profile + job posting).
     """
     match = explain_job_match(user_id, job_id)
     job, profile = match["job"], match["profile"]

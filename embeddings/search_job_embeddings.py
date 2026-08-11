@@ -3,12 +3,11 @@ search_job_embeddings.py
 
 Query-side counterpart to ingest_job_embeddings.py. Embeds a query string
 with the same model used at ingestion time and runs a cosine-similarity
-search against job_embeddings (pgvector), returning the parent
+search against job_copilot.job_embeddings (pgvector), returning the parent
 job_documents rows ranked by best-matching chunk.
 
-This is the Direct Vector Access equivalent of what Databricks Vector
-Search's similarity_search() does — no Vector Search endpoint involved,
-just pgvector's <=> operator against Lakebase directly.
+This is the entire retrieval path now -- no Databricks Vector Search
+endpoint, no Delta sync. Just pgvector's <=> operator against Lakebase.
 """
 
 import logging
@@ -56,8 +55,8 @@ SELECT
     e.chunk_index,
     e.chunk_text,
     1 - (e.embedding <=> %(query_vector)s::vector) AS similarity
-FROM job_embeddings AS e
-JOIN job_documents AS d ON d.id = e.document_id
+FROM job_copilot.job_embeddings AS e
+JOIN job_copilot.job_documents AS d ON d.id = e.document_id
 WHERE (%(source_type)s IS NULL OR e.source_type = %(source_type)s)
 ORDER BY e.embedding <=> %(query_vector)s::vector
 LIMIT %(top_k)s;
@@ -71,13 +70,12 @@ def search_job_embeddings(
     model_name: str = DEFAULT_MODEL_NAME,
 ) -> list[dict]:
     """
-    Semantic search over job_embeddings.
+    Semantic search over job_embeddings (chunk-level).
 
     Args:
         query_text: natural-language search query.
         top_k: max number of chunk matches to return.
-        source_type: optional filter, e.g. "job_posting" or "resume",
-            matching whatever values ingest_job_embeddings.py wrote.
+        source_type: optional filter, 'job_posting' or 'resume'.
         model_name: embedding model — must match ingestion to be meaningful.
 
     Returns:
