@@ -1,4 +1,4 @@
-command: ["python", "api.py"]
+command: ["python", "app.py"]
 
 env:
   - name: "LAKEBASE_SECRET_SCOPE"
