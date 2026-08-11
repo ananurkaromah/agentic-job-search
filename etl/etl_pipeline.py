@@ -151,11 +151,16 @@ if not spark.catalog.tableExists(DELTA_TABLE):
 else:
     # Table exists - perform MERGE (upsert)
     delta_table = DeltaTable.forName(spark, DELTA_TABLE)
+
+    # Deduplicate source data before merge to avoid multiple source rows matching same target
+    from pyspark.sql import Window
+    window = Window.partitionBy("source_api", "external_id").orderBy(F.desc("posted_at"))
+    deduped_df = cleaned_df.withColumn("row_num", F.row_number().over(window)).filter(F.col("row_num") == 1).drop("row_num")
     
     (
         delta_table.alias("target")
         .merge(
-            cleaned_df.alias("source"),
+            deduped_df.alias("source"),
             "target.source_api = source.source_api AND target.external_id = source.external_id"
         )
         .whenMatchedUpdateAll()
@@ -208,12 +213,20 @@ conn = psycopg2.connect(LAKEBASE_URL)
 conn.autocommit = True
 
 merge_sql = """
+
+WITH deduped AS (
+    SELECT DISTINCT ON (source_api, external_id)
+        job_id, source_api, external_id, title, company, location, salary_range,
+        raw_description, clean_description, posted_at, vector_id, ingested_at
+    FROM job_copilot.job_postings_staging
+    ORDER BY source_api, external_id, posted_at DESC
+)
 INSERT INTO job_copilot.job_postings
     (job_id, source_api, external_id, title, company, location, salary_range,
      raw_description, clean_description, posted_at, vector_id, ingested_at)
 SELECT job_id::uuid, source_api, external_id, title, company, location, salary_range,
        raw_description, clean_description, posted_at, vector_id::uuid, ingested_at
-FROM job_copilot.job_postings_staging
+FROM deduped
 ON CONFLICT (source_api, external_id) DO UPDATE SET
     title = EXCLUDED.title,
     company = EXCLUDED.company,
