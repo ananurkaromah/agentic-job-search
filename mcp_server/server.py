@@ -18,7 +18,11 @@ Deployed:
 
 import logging
 
-from mcp.server.fastmcp import FastMCP
+# FastMCP import — try current SDK path first, fall back for older versions
+try:
+    from mcp import FastMCP
+except ImportError:
+    from mcp.server.fastmcp import FastMCP
 
 # agent_tools.py, lakebase.py, and search_job_embeddings.py are copied into
 # this folder (not imported from ../app or ../embeddings) because Databricks
