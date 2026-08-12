@@ -2,10 +2,7 @@
 sync_documents.py
 Populates job_documents from job_postings and profiles -- both already
 live in the same Lakebase Postgres database, so this is plain SQL
-(INSERT ... SELECT), not a Spark job and not a Delta/CDF sync. This
-replaces the old vector_search/sync_lakebase_to_delta.py entirely: there
-is no external mirror table anymore, no Change Data Feed, no Databricks
-Vector Search endpoint. pgvector reads job_embeddings directly.
+(INSERT ... SELECT), not a Spark job and not a Delta/CDF sync. pgvector reads job_embeddings directly.
 
 Run this after etl_pipeline.py (so job_postings is current) and before
 ingest_job_embeddings.py (so there's something new to embed). Idempotent:
@@ -36,7 +33,7 @@ WHERE clean_description IS NOT NULL
 ON CONFLICT (id) DO UPDATE SET
     description_text = EXCLUDED.description_text,
     content_hash = EXCLUDED.content_hash
-WHERE job_documents.content_hash IS DISTINCT FROM EXCLUDED.content_hash;
+WHERE job_copilot.job_documents.content_hash IS DISTINCT FROM EXCLUDED.content_hash;
 """
 
 SYNC_PROFILES_SQL = """
@@ -52,12 +49,24 @@ WHERE resume_text IS NOT NULL
 ON CONFLICT (id) DO UPDATE SET
     description_text = EXCLUDED.description_text,
     content_hash = EXCLUDED.content_hash
-WHERE job_documents.content_hash IS DISTINCT FROM EXCLUDED.content_hash;
+WHERE job_copilot.job_documents.content_hash IS DISTINCT FROM EXCLUDED.content_hash;
 """
 
 
 def run() -> dict:
     with get_connection() as conn, conn.cursor() as cur:
+        # Ensure job_documents table exists
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS job_copilot.job_documents (
+                id TEXT PRIMARY KEY,
+                source_type TEXT NOT NULL,
+                description_text TEXT,
+                content_hash TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+        """)
+        conn.commit()
+        
         cur.execute(SYNC_JOB_POSTINGS_SQL)
         job_postings_synced = cur.rowcount
 

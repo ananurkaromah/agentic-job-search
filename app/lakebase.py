@@ -17,8 +17,8 @@ Usage:
 import base64
 import os
 
-import psycopg2
-import psycopg2.extras
+import psycopg
+from psycopg.rows import dict_row
 from databricks.sdk import WorkspaceClient
 
 # Must match SCOPE / KEY in setup_secrets.py.
@@ -49,4 +49,4 @@ def _fetch_connection_url() -> str:
 def get_connection():
     """Return a new psycopg2 connection to Lakebase, using dict-like rows."""
     url = _fetch_connection_url()
-    return psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
+    return psycopg.connect(url, row_factory=dict_row)
