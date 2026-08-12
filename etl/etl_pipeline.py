@@ -151,7 +151,7 @@ if not spark.catalog.tableExists(DELTA_TABLE):
 else:
     # Table exists - perform MERGE (upsert)
     delta_table = DeltaTable.forName(spark, DELTA_TABLE)
-
+    
     # Deduplicate source data before merge to avoid multiple source rows matching same target
     from pyspark.sql import Window
     window = Window.partitionBy("source_api", "external_id").orderBy(F.desc("posted_at"))
@@ -172,6 +172,7 @@ else:
 
 # COMMAND ----------
 
+# DBTITLE 1,Prepare data for PostgreSQL upsert
 # --- 4. Prepare data for PostgreSQL upsert ---------------------------------
 # Collect DataFrame to driver and prepare as list of tuples for psycopg2.
 # This approach works on serverless compute without JDBC driver.
@@ -213,9 +214,9 @@ data_tuples = [
 
 print(f"Prepared {len(data_tuples)} rows for upsert")
 
-
 # COMMAND ----------
 
+# DBTITLE 1,Bulk upsert to Lakebase using psycopg2
 # --- 5. Bulk upsert directly to job_postings using execute_values ----------
 # Use psycopg2.extras.execute_values for efficient bulk insert with ON CONFLICT.
 # No staging table needed, no JDBC driver required.
