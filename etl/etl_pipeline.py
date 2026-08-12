@@ -172,74 +172,96 @@ else:
 
 # COMMAND ----------
 
-# --- 4. Upsert into Lakebase `job_postings` -------------------------------
-# Lakebase is Postgres-compatible: write via the native postgresql
-# connector using secrets stored in a Databricks secret scope
-# (recommended over hardcoding credentials).
+# --- 4. Prepare data for PostgreSQL upsert ---------------------------------
+# Collect DataFrame to driver and prepare as list of tuples for psycopg2.
+# This approach works on serverless compute without JDBC driver.
 
-# Same secret written once by app/setup_secrets.py (scope="job_copilot",
-# key="lakebase-url"), so the notebook and the deployed app always point
-# at the same Lakebase instance. dbutils.secrets.get() returns the
-# decoded plaintext value directly — no extra base64 step needed here
-# (that step only applies to app/lakebase.py, which calls the raw REST API).
 from urllib.parse import urlparse
+import psycopg2
+from psycopg2.extras import execute_values
 
 LAKEBASE_URL = dbutils.secrets.get("job_copilot", "lakebase-url")
-parsed = urlparse(LAKEBASE_URL)
 
-STAGING_TABLE = "job_copilot.job_postings_staging"
-
-(
-    cleaned_df.write
-    .format("postgresql")
-    .option("host", parsed.hostname)
-    .option("port", parsed.port or 5432)
-    .option("database", parsed.path.lstrip("/"))
-    .option("user", parsed.username)
-    .option("password", parsed.password)
-    .option("dbtable", STAGING_TABLE)
-    .mode("overwrite")
-    .save()
+# Deduplicate before collecting to minimize memory footprint
+from pyspark.sql import Window
+window = Window.partitionBy("source_api", "external_id").orderBy(F.desc("posted_at"))
+deduped_df = (
+    cleaned_df
+    .withColumn("row_num", F.row_number().over(window))
+    .filter(F.col("row_num") == 1)
+    .drop("row_num")
 )
+
+# Collect rows and convert to list of tuples
+# Order: job_id, source_api, external_id, title, company, location, 
+#        salary_range, raw_description, clean_description, posted_at, 
+#        vector_id, ingested_at
+rows = deduped_df.select(
+    "job_id", "source_api", "external_id", "title", "company", 
+    "location", "salary_range", "raw_description", "clean_description",
+    "posted_at", "vector_id", "ingested_at"
+).collect()
+
+data_tuples = [
+    (
+        row.job_id, row.source_api, row.external_id, row.title, row.company,
+        row.location, row.salary_range, row.raw_description, row.clean_description,
+        row.posted_at, row.vector_id, row.ingested_at
+    )
+    for row in rows
+]
+
+print(f"Prepared {len(data_tuples)} rows for upsert")
+
 
 # COMMAND ----------
 
-# --- 5. Merge staging -> job_postings (dedupe on source_api + external_id) --
-# Executed via a JDBC connection so we can run a single MERGE statement.
+# --- 5. Bulk upsert directly to job_postings using execute_values ----------
+# Use psycopg2.extras.execute_values for efficient bulk insert with ON CONFLICT.
+# No staging table needed, no JDBC driver required.
 
-import psycopg2
-
-conn = psycopg2.connect(LAKEBASE_URL)
-conn.autocommit = True
-
-merge_sql = """
-
-WITH deduped AS (
-    SELECT DISTINCT ON (source_api, external_id)
-        job_id, source_api, external_id, title, company, location, salary_range,
-        raw_description, clean_description, posted_at, vector_id, ingested_at
-    FROM job_copilot.job_postings_staging
-    ORDER BY source_api, external_id, posted_at DESC
-)
-INSERT INTO job_copilot.job_postings
-    (job_id, source_api, external_id, title, company, location, salary_range,
-     raw_description, clean_description, posted_at, vector_id, ingested_at)
-SELECT job_id::uuid, source_api, external_id, title, company, location, salary_range,
-       raw_description, clean_description, posted_at, vector_id::uuid, ingested_at
-FROM deduped
-ON CONFLICT (source_api, external_id) DO UPDATE SET
-    title = EXCLUDED.title,
-    company = EXCLUDED.company,
-    location = EXCLUDED.location,
-    salary_range = EXCLUDED.salary_range,
-    raw_description = EXCLUDED.raw_description,
-    clean_description = EXCLUDED.clean_description,
-    posted_at = EXCLUDED.posted_at,
-    ingested_at = EXCLUDED.ingested_at;
-"""
-
-with conn.cursor() as cur:
-    cur.execute(merge_sql)
-    print(f"Merged rows affected: {cur.rowcount}")
-
-conn.close()
+if len(data_tuples) == 0:
+    print("No data to upsert")
+else:
+    conn = psycopg2.connect(LAKEBASE_URL)
+    
+    try:
+        with conn.cursor() as cur:
+            # Bulk insert with ON CONFLICT to deduplicate on source_api + external_id
+            upsert_sql = """
+            INSERT INTO job_copilot.job_postings
+                (job_id, source_api, external_id, title, company, location, 
+                 salary_range, raw_description, clean_description, posted_at, 
+                 vector_id, ingested_at)
+            VALUES %s
+            ON CONFLICT (source_api, external_id) DO UPDATE SET
+                title = EXCLUDED.title,
+                company = EXCLUDED.company,
+                location = EXCLUDED.location,
+                salary_range = EXCLUDED.salary_range,
+                raw_description = EXCLUDED.raw_description,
+                clean_description = EXCLUDED.clean_description,
+                posted_at = EXCLUDED.posted_at,
+                vector_id = EXCLUDED.vector_id,
+                ingested_at = EXCLUDED.ingested_at
+            """
+            
+            # execute_values handles the bulk insert efficiently
+            execute_values(
+                cur, 
+                upsert_sql, 
+                data_tuples,
+                template="(%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::uuid, %s)",
+                page_size=1000
+            )
+            
+            conn.commit()
+            print(f"✓ Upserted {len(data_tuples)} rows to job_copilot.job_postings")
+    
+    except Exception as e:
+        conn.rollback()
+        print(f"Error during upsert: {e}")
+        raise
+    
+    finally:
+        conn.close()

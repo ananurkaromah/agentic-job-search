@@ -1,5 +1,5 @@
 """
-api.py
+app.py
 Flask API + frontend dashboard for triggering sync jobs and reading
 synced records. Deployed as its own, self-contained Databricks App
 (everything it imports lives in this same folder).
@@ -18,10 +18,10 @@ set that ID as an env var (via app.yaml).
 
 Routes:
     GET  /                                -> dashboard (templates/index.html)
-    GET  /api/syncs                       -> list configured sync jobs
-    POST /api/syncs/<name>/run            -> trigger that job, returns run_id
-    GET  /api/syncs/<name>/runs/<run_id>  -> poll run status
-    GET  /api/records/<table>             -> read recent rows from a whitelisted table
+    GET  /app/syncs                       -> list configured sync jobs
+    POST /app/syncs/<name>/run            -> trigger that job, returns run_id
+    GET  /app/syncs/<name>/runs/<run_id>  -> poll run status
+    GET  /app/records/<table>             -> read recent rows from a whitelisted table
 """
 
 import os
@@ -45,7 +45,7 @@ SYNC_JOBS = {
 }
 SYNC_JOBS = {name: job_id for name, job_id in SYNC_JOBS.items() if job_id}
 
-# Only these tables are readable through /api/records/<table> — never take
+# Only these tables are readable through /app/records/<table> — never take
 # the table name straight from the URL without a whitelist, that's a SQL
 # injection surface since it lands in an f-string below.
 READABLE_TABLES = {
@@ -61,12 +61,12 @@ def dashboard():
     return render_template("index.html", syncs=sorted(SYNC_JOBS.keys()), tables=sorted(READABLE_TABLES.keys()))
 
 
-@app.route("/api/syncs")
+@app.route("/app/syncs")
 def list_syncs():
     return jsonify({"syncs": sorted(SYNC_JOBS.keys())})
 
 
-@app.route("/api/syncs/<name>/run", methods=["POST"])
+@app.route("/app/syncs/<name>/run", methods=["POST"])
 def run_sync(name: str):
     if name not in SYNC_JOBS:
         return jsonify({"error": f"unknown sync '{name}'"}), 404
@@ -75,7 +75,7 @@ def run_sync(name: str):
     return jsonify({"name": name, "run_id": run.run_id})
 
 
-@app.route("/api/syncs/<name>/runs/<run_id>")
+@app.route("/app/syncs/<name>/runs/<run_id>")
 def sync_run_status(name: str, run_id: str):
     if name not in SYNC_JOBS:
         return jsonify({"error": f"unknown sync '{name}'"}), 404
@@ -90,7 +90,7 @@ def sync_run_status(name: str, run_id: str):
     })
 
 
-@app.route("/api/records/<table>")
+@app.route("/app/records/<table>")
 def read_records(table: str):
     if table not in READABLE_TABLES:
         return jsonify({"error": f"unknown or unlisted table '{table}'"}), 404

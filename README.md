@@ -59,7 +59,7 @@ agentic-job-search/
 │   └── search_job_embeddings.py    # query-side: cosine search over job_embeddings
 
 ├── app/                             # ── deployed as its own unit: Flask dashboard ──
-│   ├── api.py                      # routes: trigger syncs, read synced records
+│   ├── app.py                      # routes: trigger syncs, read synced records
 │   ├── app.yaml                    # deployment config incl. sync job ID env vars
 │   ├── requirements.txt            # this app's own dependency set
 │   ├── lakebase.py                 # Lakebase connection helper
@@ -105,11 +105,11 @@ Six tool functions: three read (`search_and_rank_jobs` — now pgvector-based, n
 **`mcp_server/server.py`**
 A `FastMCP` server wrapping every `agent_tools.py` function plus `semantic_search_embeddings` as MCP tools, deployed as its own Databricks App on the `streamable-http` transport. Connect an agent to it (Databricks Playground's "Add MCP server," Claude Desktop, etc.) to get real search + read + write capability — this is what satisfies the "AI agent with tools" requirement.
 
-**`app/api.py`**
+**`app/app.py`**
 Flask routes: list configured sync jobs, trigger one via `jobs.run_now`, poll its run status, and read recent rows from a whitelisted set of tables (`job_postings`, `applications`, `job_documents`, `job_embeddings`). Purely operational — no agent logic. This satisfies the "Databricks App with a frontend" requirement.
 
 **`app/templates/index.html`**
-The dashboard itself: a button per configured sync (polls run status after triggering), and a table selector that fetches and renders recent rows from `/api/records/<table>`.
+The dashboard itself: a button per configured sync (polls run status after triggering), and a table selector that fetches and renders recent rows from `/app/records/<table>`.
 
 **`app/lakebase.py`, `mcp_server/lakebase.py`, `setup_secrets.py`**
 Credential handling, unchanged from before: `setup_secrets.py` stores the Lakebase URL (and optional Adzuna/USAJobs keys) as Databricks secrets under scope `job_copilot`; each app's `lakebase.py` reads the Lakebase secret at runtime via the SDK. Neither app needs `DATABRICKS_HOST`/`DATABRICKS_TOKEN` secrets anymore — `app/api.py` uses `WorkspaceClient()`'s ambient Databricks Apps credentials to call the Jobs API, and `mcp_server/` never calls the Foundation Model API directly (that's the connecting agent's job, not the tool server's).
@@ -126,7 +126,7 @@ Example raw payloads per source API, for testing `etl_pipeline.py` before wiring
 5. **Run the ETL.** Run `etl/etl_pipeline.py` as a notebook (or schedule it as a Workflow) to populate `job_postings`.
 6. **Sync documents.** Run `embeddings/sync_documents.py` to copy `job_postings`/`profiles` text into `job_documents`.
 7. **Generate embeddings.** Run `embeddings/ingest_job_embeddings.py` (as a Databricks Job — needs `sentence-transformers` + `psycopg2-binary` on the job cluster) to populate `job_embeddings`.
-8. **Create Databricks Jobs for each pipeline step**, if you want `app/api.py`'s dashboard to be able to trigger them: Workflows → Create Job, one task each for `fetch_live_jobs.py`, `etl_pipeline.py`, `sync_documents.py`, `ingest_job_embeddings.py`. Note each Job ID.
+8. **Create Databricks Jobs for each pipeline step**, if you want `app/app.py`'s dashboard to be able to trigger them: Workflows → Create Job, one task each for `fetch_live_jobs.py`, `etl_pipeline.py`, `sync_documents.py`, `ingest_job_embeddings.py`. Note each Job ID.
 9. **Deploy the Flask dashboard.** Create app `job-copilot-app` in the Apps UI, upload the 5 files/folders under `app/` into its source folder, set the `*_JOB_ID` env vars in `app.yaml` to the IDs from step 8, add the `job_copilot`/`lakebase-url` secret as a Resource, and grant the app's service principal `CAN_MANAGE_RUN` on each of those Jobs so it can trigger them. Deploy.
 10. **Deploy the MCP server.** Create app `job-copilot-mcp`, upload the 6 files under `mcp_server/`, add the same `lakebase-url` secret Resource, deploy.
 11. **Verify.** Open `job-copilot-app`'s URL — confirm the dashboard loads, trigger a sync, confirm records show up under the relevant table. Connect an MCP client to `job-copilot-mcp`'s URL and confirm all 7 tools appear; run a search and a write action through it (e.g. via Databricks Playground) to confirm the agent requirement end-to-end.

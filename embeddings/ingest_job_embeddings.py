@@ -59,8 +59,7 @@ import logging
 import sys
 from typing import Optional
 
-import psycopg2
-from psycopg2.extras import execute_values
+import psycopg
 
 from app.lakebase import get_connection
 
@@ -209,7 +208,7 @@ INSERT INTO job_copilot.job_embeddings
     embedding,
     model_name
 )
-VALUES %s
+VALUES (%s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (document_id, chunk_index)
 DO UPDATE SET
     source_type = EXCLUDED.source_type,
@@ -230,18 +229,6 @@ DO UPDATE SET
 # content_hash,
 # embedding,
 # model_name
-
-EMBEDDING_TEMPLATE = """
-(
-    %s,
-    %s,
-    %s,
-    %s,
-    %s,
-    %s::vector,
-    %s
-)
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -697,11 +684,9 @@ def run(
                     start:start + batch_size
                 ]
 
-                execute_values(
-                    cur,
+                cur.executemany(
                     UPSERT_EMBEDDINGS_SQL,
                     batch,
-                    template=EMBEDDING_TEMPLATE,
                 )
 
                 total_written += len(batch)

@@ -45,7 +45,7 @@
 async function runSync(name) {
     const statusEl = document.getElementById('status-' + name);
     statusEl.textContent = 'starting...';
-    const res = await fetch(`/api/syncs/${name}/run`, { method: 'POST' });
+    const res = await fetch(`/app/syncs/${name}/run`, { method: 'POST' });
     const data = await res.json();
     if (data.error) { statusEl.textContent = 'error: ' + data.error; return; }
     statusEl.textContent = 'run ' + data.run_id + ' — polling...';
@@ -53,7 +53,7 @@ async function runSync(name) {
 }
 
 async function pollRun(name, runId, statusEl) {
-    const res = await fetch(`/api/syncs/${name}/runs/${runId}`);
+    const res = await fetch(`/app/syncs/${name}/runs/${runId}`);
     const data = await res.json();
     statusEl.textContent = `run ${runId}: ${data.life_cycle_state || 'unknown'} ${data.result_state || ''}`;
     if (data.life_cycle_state && !['TERMINATED', 'SKIPPED', 'INTERNAL_ERROR'].includes(data.life_cycle_state.replace(/[^A-Z_]/g, ''))) {
@@ -63,7 +63,7 @@ async function pollRun(name, runId, statusEl) {
 
 async function loadRecords() {
     const table = document.getElementById('table-select').value;
-    const res = await fetch(`/api/records/${table}?limit=25`);
+    const res = await fetch(`/app/records/${table}?limit=25`);
     const data = await res.json();
     const container = document.getElementById('records');
     if (!data.rows || data.rows.length === 0) {
