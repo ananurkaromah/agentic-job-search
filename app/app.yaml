@@ -9,10 +9,10 @@ env:
   # (Workflows -> Create Job). Leave blank/unset to hide it from the
   # dashboard until then.
   - name: "FETCH_LIVE_JOBS_JOB_ID"
-    value: ""
+    value: "660244091375312"
   - name: "ETL_PIPELINE_JOB_ID"
-    value: ""
+    value: "432015057741222"
   - name: "SYNC_DOCUMENTS_JOB_ID"
-    value: ""
+    value: "115866683993198"
   - name: "INGEST_EMBEDDINGS_JOB_ID"
-    value: ""
+    value: "483220734241096"
