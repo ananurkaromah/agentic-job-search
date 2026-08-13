@@ -6,7 +6,7 @@ An intelligent employment platform combining semantic job search, application pi
 
 ## Program
 
-This project is submitted as a capstone for **The Rise of the AI Data Engineer**, a professional development program by dataExpert.io focused on building production-grade AI applications on the Databricks Lakehouse platform.
+This project is submitted as a capstone for **The Rise of the AI Data Engineer**, a professional development program by **DataExpert.io** focused on building production-grade AI applications on the Databricks Lakehouse platform.
 
 ---
 
@@ -241,7 +241,7 @@ agentic-job-search/
 
 ## Setup and Deployment
 
-### Phase 1: Prerequisites (10 minutes)
+### Phase 1: Prerequisites 
 
 ```
 1. Provision Lakebase (managed PostgreSQL on Databricks)
@@ -270,9 +270,7 @@ agentic-job-search/
    - Copies text from job_postings to job_documents
 ```
 
-### Phase 2: Create 4 Databricks Jobs (30 minutes)
-
-Reference: JOB_CREATION_GUIDE.md (detailed) or JOB_CREATION_CHECKLIST.md (quick)
+### Phase 2: Create 4 Databricks Jobs 
 
 | Job | Purpose | Cluster | Runtime |
 |-----|---------|---------|---------|
@@ -283,10 +281,7 @@ Reference: JOB_CREATION_GUIDE.md (detailed) or JOB_CREATION_CHECKLIST.md (quick)
 
 Note Job IDs after creation.
 
-### Phase 3: Deploy Flask Dashboard (5 minutes)
-
-Reference: APP_DEPLOYMENT_GUIDE.md (detailed) or APP_DEPLOYMENT_CHECKLIST.md (quick)
-
+### Phase 3: Deploy Flask Dashboard 
 1. Update app/app.yaml with Job IDs from Phase 2
 2. Compute > Apps > Create App
    - Name: job-copilot-app
@@ -303,8 +298,7 @@ Dashboard features:
 - View job run status (running/succeeded/failed)
 - Browse synced records (job_postings, job_documents, job_embeddings, etc.)
 
-### Phase 4: Deploy Tool Server (5 minutes)
-
+### Phase 4: Deploy Tool Server
 1. Compute > Apps > Create App
    - Name: job-copilot-mcp
    - Source: /Workspace/.../agentic-job-search/mcp_server/
@@ -313,8 +307,7 @@ Dashboard features:
 4. Test: curl https://.../job-copilot-mcp/tools
    - Should return: 7 tool schemas in JSON format
 
-### Phase 5: Configure and Test Agent (10 minutes)
-
+### Phase 5: Configure and Test Agent 
 1. Open Databricks Playground
 2. Select Meta Llama 3.3 70B model
 3. Add MCP server configuration:
@@ -324,8 +317,6 @@ Dashboard features:
 5. Paste system prompt: AGENT_SYSTEM_PROMPT.md
 6. Run quick test: AGENT_QUICK_TEST_CARD.md (7 prompts, 5 minutes)
 7. Score: 6 or more tests pass indicates successful agent operation
-
-Complete flow: Prerequisites (10) + Jobs (30) + Dashboard (5) + Server (5) + Agent (10) = approximately 1 hour
 
 ---
 
@@ -417,20 +408,6 @@ Test Card: AGENT_QUICK_TEST_CARD.md with 7 copy-paste prompts
 
 Score: 7 out of 7 tests passed. Excellent (90-100%)
 
-### Comprehensive Test (15 minutes)
-
-Guide: AGENT_VERIFICATION_GUIDE.md with detailed scenarios and expected outputs
-
-Results:
-- All tools called in appropriate context
-- All 6 capabilities demonstrated fully
-- Conversational and proactive assistance ("Want to save this?" rather than "Save? Y/N")
-- Honest assessments that acknowledge gaps without false positivity
-- Graceful error handling with retry and clarification logic
-
-Grade: Excellent (90-100%) - Production-ready deployment
-
----
 
 ## Key Design Decisions
 
@@ -481,94 +458,12 @@ Execution: Runs as Databricks Job for asynchronous, scheduled, parallelizable pr
 
 | Requirement | Satisfaction Method |
 |---|---|
-| Databricks App with Frontend | job-copilot-app (Flask dashboard) deployed to Databricks Apps |
-| AI Agent with Tools | job-copilot-mcp (Flask server) exposes 7 tools; tested with Meta Llama 3.3 70B in Playground |
+| Databricks App with Frontend | job-copilot-app (Flask dashboard) deployed to Databricks Apps with Link App:  https://job-copilot-app-7474657509107960.aws.databricksapps.com |
+| AI Agent with Tools | job-copilot-mcp (Flask server) exposes 7 tools; tested with Meta Llama 3.3 70B in Playground https://agent-job-ai-7474657509107960.aws.databricksapps.com|
 | Search and Retrieve Capability | search_and_rank_jobs and explain_job_match (pgvector semantic search) |
 | Write and Action Capability | update_application_stage, draft_tailored_materials, add_interview_note |
 | Lakebase Integration | All data stored in Lakebase (job_postings, profiles, applications, etc.) |
 | pgvector Integration | Embeddings stored and searched via pgvector (no external service) |
-| End-to-End Demonstration | Agent can search jobs, explain fit, move through pipeline, draft materials, track interviews, surface stale applications |
+| End-to-End Demonstration | Agent can search jobs, explain fit, move through pipeline, draft materials, track interviews, surface stale applications with link App: |
 
 ---
-
-## Documentation
-
-| Document | Purpose | Read When |
-|----------|---------|-----------|
-| DEPLOYMENT_SUMMARY.md | Overview of 6 phases (0 to production) | Planning deployment |
-| JOB_CREATION_GUIDE.md | Step-by-step Job creation instructions | Creating Databricks Jobs |
-| JOB_CREATION_CHECKLIST.md | Quick checklist | Quick reference |
-| APP_DEPLOYMENT_GUIDE.md | Dashboard app deployment details | Deploying app/ |
-| APP_DEPLOYMENT_CHECKLIST.md | Quick app checklist | Quick reference |
-| MCP_DEPLOYMENT_FIX_v2.md | FastMCP to Flask pivot | Understanding tool server |
-| AGENT_SYSTEM_PROMPT.md | AI agent instructions | Configuring agent |
-| AGENT_VERIFICATION_GUIDE.md | Comprehensive test scenarios | Full testing (15 minutes) |
-| AGENT_QUICK_TEST_CARD.md | One-page grading checklist | Quick verification (5 minutes) |
-| HOW_TO_TEST_AGENT.md | Integration guide for all documents | Overall testing workflow |
-
----
-
-## Verification Checklist
-
-Use this checklist to verify complete and working deployment:
-
-DEPLOYMENT CHECKLIST
-
-Setup (Prerequisites):
-- Lakebase provisioned and pgvector enabled
-- Secrets stored (setup_secrets.py executed)
-- Schema created (lakebase_schema.sql executed)
-- Files in workspace (app/, mcp_server/, embeddings/, etc.)
-
-Jobs Created:
-- fetch-live-jobs (or data uploaded to Volume)
-- etl-pipeline (verify: SELECT COUNT(*) FROM job_copilot.job_postings; returns greater than 0)
-- sync-documents (verify: SELECT COUNT(*) FROM job_copilot.job_documents; returns greater than 0)
-- ingest-job-embeddings (verify: SELECT COUNT(*) FROM job_copilot.job_embeddings; returns greater than 0)
-
-Applications Deployed:
-- job-copilot-app running and accessible
-- job-copilot-mcp running and accessible
-- Dashboard successfully triggers jobs
-- Tool server returns 7 tools on /tools endpoint
-
-Agent Testing:
-- MCP connected (7 tools visible)
-- System prompt applied
-- Quick test: 7 out of 7 prompts pass (AGENT_QUICK_TEST_CARD.md)
-- Full test: All 6 capabilities verified (AGENT_VERIFICATION_GUIDE.md)
-
-Result: All checks pass indicates complete and verified deployment
-
----
-
-## Next Steps
-
-1. Execute deployment following DEPLOYMENT_SUMMARY.md (1 hour, end-to-end)
-2. Run agent tests using AGENT_QUICK_TEST_CARD.md for rapid verification (5 minutes)
-3. Conduct comprehensive capability verification with AGENT_VERIFICATION_GUIDE.md (15 minutes)
-4. Iterate and refine as needed
-
----
-
-## Support and Troubleshooting
-
-Troubleshooting Guide:
-- MCP server crashes: Reference MCP_DEPLOYMENT_FIX_v2.md
-- Jobs not triggering: Verify app permissions (CAN_MANAGE_RUN) and Job IDs in app.yaml
-- Lakebase connection errors: Verify secret storage and URL format
-- Agent tools not working: Confirm MCP server running at /apps/job-copilot-mcp/ endpoint
-
-Documentation Hierarchy:
-1. Quick answers: AGENT_QUICK_TEST_CARD.md or JOB_CREATION_CHECKLIST.md
-2. Step-by-step instructions: JOB_CREATION_GUIDE.md or APP_DEPLOYMENT_GUIDE.md
-3. Detailed reference: AGENT_VERIFICATION_GUIDE.md or AGENT_SYSTEM_PROMPT.md
-4. Complete overview: DEPLOYMENT_SUMMARY.md
-
----
-
-## Repository
-
-Repo: agentic-job-search (GitHub: @ananurkaromah)
-
-Deployment Platform: Databricks Free Edition
